@@ -1,0 +1,496 @@
+/**
+ * Processes a Disney account registration (for Cast Member, Sales, or WDPro).
+ * Designed to be called by WorkflowM3TAFormWidget.
+ *
+ * @param parameters contains 'originatingWorkspace' id, and parameters from disney schemas required for registration
+ * @param user with details (email, etc.) of logged in user (if user is logged in)
+ * @return one of:
+ *  - "ERROR:<error message>":  an error message which is displayed to the user
+ *  - "MESSAGE:<info message>":  an informational message which is displayed to the user
+ *  - "WORKSPACE:<workspace id>":  a Workspace Id which the current user session is switched to
+ *  - "WORKSPACE:<workspace id>;ERROR:<error message>": a composite of the above, where the message is shown first, then the workspace is switched
+ *  - "WORKSPACE:<workspace id>;MESSAGE:<info message>":  a composite of the above, where the message is shown first, then the workspace is switched
+ *  -  anything else is an internal error which is logged, and an "internal error" message is displayed to the user
+ */
+
+/**
+ * Workspace Ids (to be configured at installation)
+ */
+var kResourceCafeLandingPageWorkspace    = '0FCEDF93-627B-404D-8BB6-D0157AACFE53';
+var kDisneyCopyrightLandingPageWorkspace = '050AFD7A-6EE6-455E-885B-F30FB9A995D0';
+var kWDProAssetsLandingPageWorkspace     = 'A6B2E514-F6B9-45A8-8DC9-3259822DED71';
+
+/**
+ * Constants
+ */
+var kScriptName = "account_registration workflow";
+
+// Widget Ids
+var kResourceCafeForCastRegistrationWidgetId     = 'resourcecafeCastRegistrationForm';
+var kResourceCafeForWDProRegistrationWidgetId    = 'resourcecafeWDProRegistrationForm';
+var kDisneyCopyrightForCastRegistrationWidgetId  = 'disneycopyrightCastRegistrationForm';
+var kDisneyCopyrightForSalesRegistrationWidgetId = 'disneycopyrightSalesRegistrationForm';
+var kWDProAssetsForCastRegistrationWidgetId      = 'wdproassetsCastRegistrationForm';
+var kWDProAssetsForWDProRegistrationWidgetId     = 'wdproassetsWDProRegistrationForm';
+
+// Schemas
+var kDisneyAccountRequestSchema = 'http://ns.disney.com/accountrequest/1.0/';
+var kDisneyCastSchema = 'http://ns.disney.com/cast/1.0/';
+var kDisneyExternalSchema = 'http://ns.disney.com/external/1.0/';
+var kDisneySalesSchema = 'http://ns.disney.com/sales/1.0/';
+
+// User Types
+var kCast = 'cast';
+var kSales = 'sales';
+var kWDPro = 'wdpro';
+
+// Request/Account Types
+var kResourceCafe = 'resourcecafe';
+var kDisneyCopyright = 'disneycopyright';
+var kWDProAssets = 'wdproassets';
+
+var kRootPath = '';
+
+/**
+ * Returns the value of theParameterName if it exists in theParameters.  Otherwise returns null.
+ * Uses theSchema qualifier if it's not null.
+ *
+ * @param theParameters
+ * @param theSchema
+ * @param theParameterName
+ * @return String
+ */
+function getParameterValue(theParameters, theSchema, theParameterName)
+{
+	if (theParameters == null || theParameters.size < 1)
+	{
+		return null;
+	}
+	var aSearchKey = (theSchema != null) ? theSchema + ' ' + theParameterName : theParameterName;
+	var aParams = theParameters.parameterArray;
+	for each (var aParameter in aParams)
+	{
+		var aKey = aParameter[0];
+		var aValue = aParameter[1];
+		if (aKey === aSearchKey)
+		{
+			return aValue;
+		}
+	}
+	return null;
+}
+
+/**
+ * Sets theMeta property specified by theSchema and thePropertyName to the
+ * value of thePropertyName in theParameters.
+ *
+ * @param theParameters
+ * @param theMeta
+ * @param theSchema
+ * @param thePropertyName
+ */
+function setProperty(theParameters, theMeta, theSchema, thePropertyName)
+{
+	var theValue = getParameterValue(theParameters, theSchema, thePropertyName);
+	if (theValue != null)
+	{
+		theMeta.addProperty(new Property(theSchema, thePropertyName), theValue);
+	}
+}
+
+/**
+ * Returns the user type based on theOriginatingWidgetId.
+ *
+ * @param theOriginatingWidgetId
+ * @return String
+ */
+function getUserType(theOriginatingWidgetId)
+{
+	var aUserType = '';
+	if (theOriginatingWidgetId == kResourceCafeForCastRegistrationWidgetId
+			|| theOriginatingWidgetId == kDisneyCopyrightForCastRegistrationWidgetId
+			|| theOriginatingWidgetId == kWDProAssetsForCastRegistrationWidgetId)
+	{
+		aUserType = kCast;
+	} else if (theOriginatingWidgetId == kDisneyCopyrightForSalesRegistrationWidgetId)
+	{
+		aUserType = kSales;
+	} else if (theOriginatingWidgetId == kWDProAssetsForWDProRegistrationWidgetId
+			|| theOriginatingWidgetId == kResourceCafeForWDProRegistrationWidgetId)
+	{
+		aUserType = kWDPro;
+	} else
+    {
+        logAtLevel('Error: invalid originating widget id in getUserType()', kScriptName, logLevels.WARNING);
+    }
+	return aUserType;
+}
+
+/**
+ * Returns the request type based on theOriginatingWidgetId.
+ *
+ * @param theOriginatingWidgetId
+ * @return String
+ */
+function getRequestType(theOriginatingWidgetId)
+{
+	var aRequestType = '';
+	if (theOriginatingWidgetId == kResourceCafeForCastRegistrationWidgetId
+			|| theOriginatingWidgetId == kResourceCafeForWDProRegistrationWidgetId)
+	{
+		aRequestType = kResourceCafe;
+	} else if (theOriginatingWidgetId == kDisneyCopyrightForSalesRegistrationWidgetId
+			|| theOriginatingWidgetId == kDisneyCopyrightForCastRegistrationWidgetId)
+	{
+		aRequestType = kDisneyCopyright;
+	} else if (theOriginatingWidgetId == kWDProAssetsForWDProRegistrationWidgetId
+			|| theOriginatingWidgetId == kWDProAssetsForCastRegistrationWidgetId)
+	{
+		aRequestType = kWDProAssets;
+    } else
+    {
+        logAtLevel('Error: invalid originating widget id in getRequestType()', kScriptName, logLevels.WARNING);
+    }
+	return aRequestType;
+}
+
+/**
+ * Returns true if theEmail is a Disney email address, otherwise returns false.
+ *
+ * @param theEmail
+ * @return boolean
+ */
+function isDisneyEmail(theEmail)
+{
+	return ((theEmail != null) && (theEmail.toLowerCase().indexOf('@disney.com') != -1));
+}
+
+/**
+ * Returns the registration file (if it exists) for thePortalType and theEmail for a user.
+ * Returns null if no such registration file exists.
+ *
+ * @param theEmail a user's email address
+ * @param thePortalType one of 'resourcecafe', 'disneycopyright', 'wdproassets'
+ * @return ManagedFile
+ */
+function getAccountRegistrationFile(theEmail, thePortalType)
+{
+	var aCastEmailIndex = fieldManager.getColumn(kDisneyCastSchema + " email");
+    if (aCastEmailIndex == null)
+    {
+        logAtLevel('Error: invalid aCastEmailIndex in getAccountRegistrationFile()', kScriptName, logLevels.WARNING);
+        return null;
+    }
+	var anExternalEmailIndex = fieldManager.getColumn(kDisneyExternalSchema + " email");
+    if (anExternalEmailIndex == null)
+    {
+        logAtLevel('Error: invalid anExternalEmailIndex in getAccountRegistrationFile()', kScriptName, logLevels.WARNING);
+        return null;
+    }
+	var aRequestTypeIndex = fieldManager.getColumn(kDisneyAccountRequestSchema + " type");
+    if (aRequestTypeIndex == null)
+    {
+        logAtLevel('Error: invalid aRequestTypeIndex in getAccountRegistrationFile()', kScriptName, logLevels.WARNING);
+        return null;
+    }
+
+	var anSQL = new SQL();
+	var aQuery = "select record_id from editorial where " + aRequestTypeIndex + " = '" + thePortalType +
+			"' AND (" + aCastEmailIndex + " = '" + theEmail + "' OR " + anExternalEmailIndex + " = '" + theEmail + "')";
+	var anAssetId = anSQL.queryForInteger(aQuery);
+	var aFile = (anAssetId > 0) ? new ManagedFile(anAssetId) : null;
+	return aFile;
+}
+
+/**
+ * Returns a new registration file, named <asset id>.xmp, for theRequestType.
+ * Returns null if the file can't be created.
+ *
+ * @param theRequestType a ManagedFile
+ * @return ManagedFile
+ */
+function createRegistrationFile(theRequestType)
+{
+	// Ensure that account folder exists
+	var aRequestFolderName = 'accounts_' + theRequestType;
+	var aRequestFolder = new ManagedFile(aRequestFolderName);
+	if (! fileManager.isFolder(aRequestFolder))
+	{
+		fileManager.folderNew(new ManagedFile(kRootPath), aRequestFolderName);
+	}
+
+	// Create file with temporary name
+	var aFileName = 'account_' + (new Date()).getTime() + '.xmp';
+	var aFilePath = aRequestFolderName + '/' + aFileName;
+	var aNewFile = fileManager.fileNew(aRequestFolder, aFileName);
+	if (aNewFile != null)
+	{
+		// Rename to <asset id>.xmp and return ManagedFile
+		var aTempManagedFile = new ManagedFile(aFilePath);
+		var anAssetId = aTempManagedFile.assetId;
+		var aNewFileName = anAssetId + '.xmp';
+		fileManager.fileRename(aNewFile, aNewFileName);
+		return new ManagedFile(anAssetId);
+	}
+    logAtLevel('Error: aNewFile is null in createRegistrationFile()', kScriptName, logLevels.WARNING);
+
+	return null;
+}
+
+/**
+ * Returns the duplicate registration error response based on theRequestType.
+ * This includes an error message and the workspace to go to after dismissing the error.
+ *
+ * @param theRequestType
+ * @return String
+ */
+function getDuplicateRegistrationResponse(theRequestType)
+{
+	var aResponse =  '';
+	if (theRequestType == kResourceCafe)
+	{
+		aResponse += 'WORKSPACE:' + kResourceCafeLandingPageWorkspace + ';';
+		aResponse += 'ERROR:There has been an error processing your account request.<br>';
+		aResponse += 'Please resubmit and/or contact <a href=\"mailto:wdwresourcecafe@disney.com\">wdwresourcecafe@disney.com</a>.';
+	} else if (theRequestType == kDisneyCopyright)
+	{
+		aResponse += 'WORKSPACE:' + kDisneyCopyrightLandingPageWorkspace + ';';
+		aResponse += 'ERROR:There has been an error processing your account request.<br>';
+		aResponse += 'Please resubmit and/or contact <a href=\"mailto:disneycopyright@disneytravelagents.com\">disneycopyright@disneytravelagents.com</a>.';
+	} else if (theRequestType == kWDProAssets)
+	{
+		aResponse += 'WORKSPACE:' + kWDProAssetsLandingPageWorkspace + ';';
+		aResponse += 'ERROR:There has been an error processing your account request.<br>';
+		aResponse += 'Please resubmit and/or contact <a href=\"mailto:Jim.A.DAddario@disney.com\">Jim.A.DAddario@disney.com</a>.';
+	} else
+    {
+        logAtLevel('Error: invalid request type in getDuplicateRegistrationResponse()', kScriptName, logLevels.WARNING);
+    }
+	return aResponse;
+}
+
+/**
+ * Returns the confirmed registration message response with the theAssetId.
+ * This includes an error message and the workspace to go to after dismissing the info message.
+ *
+ * @param theRequestType
+ * @param theAssetId
+ * @return String
+ */
+function getConfirmedRegistrationResponse(theRequestType, theAssetId)
+{
+	var aResponse = '';
+	if (theRequestType == kResourceCafe)
+	{
+		aResponse += 'WORKSPACE:' + kResourceCafeLandingPageWorkspace + ';';
+	} else if (theRequestType == kDisneyCopyright)
+	{
+		aResponse += 'WORKSPACE:' + kDisneyCopyrightLandingPageWorkspace + ';';
+	} else if (theRequestType == kWDProAssets)
+	{
+		aResponse += 'WORKSPACE:' + kWDProAssetsLandingPageWorkspace + ';';
+	} else
+    {
+        logAtLevel('Error: invalid request type in getConfirmedRegistrationResponse()', kScriptName, logLevels.WARNING);
+    }
+	aResponse += 'MESSAGE:Thank you for your account request. You will be notified by email when your request has been processed.<br>';
+	aResponse += 'You account request ID is ' + theAssetId + '.';
+	return aResponse;
+}
+
+/**
+ * Get error response for a cast member who isn't logged in, customized for theRequestType.
+ * This includes an error message and the workspace to go to after dismissing the error.
+ *
+ * @param theRequestType
+ * @return String
+ */
+function getCastNotLoggedInResponse(theRequestType)
+{
+	var aResponse = '';
+	if (theRequestType == kResourceCafe)
+	{
+		aResponse += 'WORKSPACE:' + kResourceCafeLandingPageWorkspace + ';';
+		 // Srini: Commented to make text change per Alyce
+		/** aResponse += 'MESSAGE:Please login to the MediaBeacon portal and use the cast member form.<br>';
+		aResponse += 'Go to <a href=\"http://www.resourcecafe.com\">www.resourcecafe.com</a>.';
+ */
+		aResponse += 'MESSAGE:Please use your Hub ID and password to proceed.<br>';
+	} else if (theRequestType == kDisneyCopyright)
+	{
+		aResponse += 'WORKSPACE:' + kDisneyCopyrightLandingPageWorkspace + ';';
+		 // Srini: Commented to make text change per Alyce
+		/** aResponse += 'MESSAGE:Please login to the MediaBeacon portal and use the cast member form.<br>';
+		aResponse += 'Go to <a href=\"http://www.disneycopyright.com\">www.disneycopyright.com</a>.';
+ */
+		aResponse += 'MESSAGE:Please use your Hub ID and password to proceed.<br>';
+	} else if (theRequestType == kWDProAssets)
+	{
+		aResponse += 'WORKSPACE:' + kWDProAssetsLandingPageWorkspace + ';';
+		// Srini: Commented to make text change per Alyce
+		/** aResponse += 'MESSAGE:Please login to the MediaBeacon portal and use the cast member form.<br>';
+		aResponse += 'Go to <a href=\"http://www.wdproassets.com\">www.wdproassets.com</a>.';
+ */
+		aResponse += 'MESSAGE:Please use your Hub ID and password to proceed.<br>';
+	} else
+    {
+        logAtLevel('Error: invalid request type in getCastNotLoggedInResponse()', kScriptName, logLevels.WARNING);
+    }
+	return aResponse;
+}
+
+/**
+ * Returns true if theUser is logged in, otherwise returns false.
+ *
+ * @param theUser
+ * @return boolean
+ */
+function isLoggedIn(theUser)
+{
+    // Logged in: verify email is set
+    return (theUser.email != null && theUser.email != '');
+}
+
+/**
+ * Main
+ *
+ * @return a string result that becomes the result of the workflow script
+ */
+function main()
+{
+	// Get originating workspace
+	/* Ignore -- we don't use this
+	var anOriginatingWorkspace = getParameterValue(parameters, null, 'originatingWorkspace');
+	if (anOriginatingWorkspace == null || anOriginatingWorkspace == '')
+	{
+		return 'Failure: Missing originatingWorkspace';
+	}
+	*/
+
+	// Get originating widget id
+	var anOriginatingWidgetId = getParameterValue(parameters, null, "originatingWidgetId");
+	if (anOriginatingWidgetId == null || anOriginatingWidgetId == '')
+	{
+        logAtLevel('Error: missing originatingWidgetId', kScriptName, logLevels.WARNING);
+		return "Failure: missing originatingWidgetId";
+	}
+
+	// Determine user type
+	var aUserType = getUserType(anOriginatingWidgetId);
+	if (aUserType == null || aUserType == '')
+	{
+        logAtLevel('Error: Could not determine user type.', kScriptName, logLevels.WARNING);
+		return 'Failure: Could not determine user type.'
+	}
+
+	// Determine request type (might not equal user type)
+	var aRequestType = getRequestType(anOriginatingWidgetId);
+	if (aRequestType == null || aRequestType == '')
+	{
+        logAtLevel('Error: Could not determine request type.', kScriptName, logLevels.WARNING);
+		return 'Failure: Could not determine request type.'
+	}
+
+	// Get user email
+	var anEmail = null;
+	if (aUserType == kCast)
+	{
+		// Set by LDAP
+		anEmail = user.email;
+	} else
+	{
+		anEmail = getParameterValue(parameters, kDisneyExternalSchema, 'email');
+		if (anEmail == null || anEmail == '')
+		{
+            logAtLevel('Error: Missing email.', kScriptName, logLevels.WARNING);
+			return 'Failure: Missing email.';
+		}
+	}
+
+	// Ensure Cast Member is logged in
+	if (aUserType == kCast  && !isLoggedIn(user))
+	{
+		return getCastNotLoggedInResponse(aRequestType);
+	}
+
+	// Ensure Non-Cast Member isn't using a Disney address
+	if (aUserType != kCast  && isDisneyEmail(anEmail))
+	{
+		//return getCastNotLoggedInResponse(aRequestType);
+	}
+
+	// Verify request file doesn't already exist (indicates duplicate registration)
+	var aRegistrationFile = getAccountRegistrationFile(anEmail, aRequestType);
+	if (aRegistrationFile != null)
+	{
+		var aDuplicateRegistrationResponse = getDuplicateRegistrationResponse(aRequestType);
+		if (aDuplicateRegistrationResponse == null || aDuplicateRegistrationResponse == '')
+		{
+            logAtLevel('Error: Missing duplicate registration response.', kScriptName, logLevels.WARNING);
+			return 'Failure: Missing duplicate registration response.'
+		}
+		return aDuplicateRegistrationResponse;
+	}
+
+	// Create account request asset and set its account registration properties
+	var aNewFile = createRegistrationFile(aRequestType);
+	if (aNewFile == null)
+	{
+        logAtLevel('Error: Unable to create registration file.', kScriptName, logLevels.WARNING);
+		return "Failure: Unable to create registration file.";
+	}
+	if (aNewFile.xmp == null || aNewFile.xmp.meta == null)
+	{
+        logAtLevel('Error: File is missing metadata', kScriptName, logLevels.WARNING);
+		return "Failure:  File is missing metadata";
+	}
+	var aMeta = aNewFile.xmp.meta;
+
+	// set account request details
+	aMeta.addProperty(new Property(kDisneyAccountRequestSchema, 'type'), aRequestType);
+	aMeta.addProperty(new Property(kDisneyAccountRequestSchema, 'status'), 'pending');
+    setProperty(parameters, aMeta, kDisneyAccountRequestSchema, 'acceptedTermsAndConditions');
+
+	// set registrant information
+	if (aUserType == kCast)
+	{
+		// set user properties
+		aMeta.addProperty(new Property(kDisneyCastSchema, 'email'), user.email);
+		aMeta.addProperty(new Property(kDisneyCastSchema, 'firstName'), user.firstName);
+		aMeta.addProperty(new Property(kDisneyCastSchema, 'lastName'), user.lastName);
+		setProperty(parameters, aMeta, kDisneyCastSchema, 'departmentOrLocation');
+		setProperty(parameters, aMeta, kDisneyCastSchema, 'justification');
+	} else
+	{
+		// Set external properties (same for Sales and WDPro)
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'email');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'firstName');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'middleName');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'lastName');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'company');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'title');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'department');	
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'address1');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'address2');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'city');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'state');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'country');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'zipOrPostalCode');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'telephone');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'fax');
+		setProperty(parameters, aMeta, kDisneyExternalSchema, 'justificationAndDisneySponsor');
+
+		if (aUserType == kSales)
+		{
+			setProperty(parameters, aMeta, kDisneySalesSchema, 'industryId');
+		}
+	}
+
+	aNewFile.writeXmp();
+
+	// return 'registration confirmed' message
+	var anAssetId = aNewFile.assetId;
+	return getConfirmedRegistrationResponse(aRequestType, anAssetId);
+}
+
+main();
