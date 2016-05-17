@@ -1,0 +1,80 @@
+
+PC number: PC222329
+Ip Address:  10.102.24.168
+MAC: 8C-89-A5-93-74-1E
+**********************************
+
+Share point link :
+
+https://cengageo365.sharepoint.com/sites/rightsource/_layouts/15/start.aspx#/Shared
+
+%20Documents/Forms/AllItems.aspx?RootFolder=%2Fsites%2Frightsource%2FShared%20Documents
+
+%2F08%20%2D%20BIS%20Tower%2FKnowledge%20Acquisition%2FProduct%20Systems%2FDocuments
+
+%2FCCMS&FolderCTID=0x0120004C0960A36AD2C24EA1D398C3DD0FB019&View=%7B7FB5797C%2DAFCD
+
+%2D4573%2DB117%2D21FC53537DDD%7D 
+
+Kiran.PMohandas@contractor.cengage.com/Cengage2
+
+credentials: Cyarlagadda@contractor.cengage.com/Cengage1
+
+KPMohandas@contractor.cengage.com/Cengage2
+
+*******************************************************
+
+Alfresco developer series 
+
+http://ecmarchitect.com/alfresco-developer-series
+
+http://ecmarchitect.com/alfresco-developer-series-tutorials/
+
+*******************************************************
+
+UAT Alfresco 
+
+https://cms-reconuat.cengage.info/share/page/ ----local 
+
+admin/admin
+
+********************************************************
+
+QA anukunta 
+
+
+https://cms-reconperf.cengage.info/share/page
+	
+PDharuri/Sunshine1
+
+*********************************************************
+
+SQL password-admin
+
+Alfresco password - password-1
+*******************************************************
+
+*.cengage.com
+
+
+https://horizon.cengage.com
+
+\\10.102.6.96\d$
+ 
+ IME NA DAM Offshore Bench [1000098715]
+ 
+ 
+ as of now sharepoint.. html5.. css3
+ivi using.. javascript
+
+439446
+
+
+http://localhost:8080/alfresco/jsp/login.jsp
+
+http://localhost:8080/alfresco/faces/jsp/login.jsp
+
+
+INC000011981770-java
+
+*.cengage.com;*.cognizant.com;10.*;*
