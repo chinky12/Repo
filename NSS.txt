@@ -1,0 +1,7 @@
+vlan change
+
+->network and system aervices->gns->request for change->proj request->expansion/closure/new vlan
+
+
+PC Shifting:
+network and system aervices->EUCS-Desk side services->Hardware->Desktop->Shifting Desktop 
